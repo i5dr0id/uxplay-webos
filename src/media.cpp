@@ -13,7 +13,7 @@ Media::~Media() { close(); delete impl_; }
 void Media::event(int type, int64_t value, const char *message, void *user) {
     Media *m = static_cast<Media *>(user);
     if (type == PF_EVENT_TYPE_FRAMEREADY) { ++m->frames; return; }
-    if (type == PF_EVENT_TYPE_INT_NEED_DATA || type == PF_EVENT_TYPE_INT_ENOUGH_DATA || type == PF_EVENT_TYPE_INT_BUFFERLOW || type == 0x2a) return;
+    if (type == PF_EVENT_TYPE_INT_NEED_DATA || type == PF_EVENT_TYPE_INT_ENOUGH_DATA || type == PF_EVENT_TYPE_INT_BUFFERLOW || type == 0x2a || type == 0x2d || type == 0x2e || type == 0x31) return;
     fprintf(stderr, "[smp] event=0x%x value=%lld %s\n", type, (long long)value, message ? message : "");
     switch (type) {
     case PF_EVENT_TYPE_STR_STATE_UPDATE__LOADCOMPLETED: m->ready = true; break;
@@ -36,15 +36,15 @@ bool Media::open(const char *app_id, int width, int height, bool audio, int rate
     ready = playing = ended = failed = false;
     frames = 0;
 
-    // Create exported video window (replaces AcbAPI on webOS 5+)
-    const char *id = SDL_webOSCreateExportedWindow(0);
+    fprintf(stderr, "[media] Creating exported window type=VIDEO\n");
+    const char *id = SDL_webOSCreateExportedWindow(SDL_WEBOS_EXPORED_WINDOW_TYPE_VIDEO);
     if (!id) {
         fprintf(stderr, "[media] SDL_webOSCreateExportedWindow failed\n");
         return false;
     }
     snprintf(window_id_, sizeof(window_id_), "%s", id);
+    fprintf(stderr, "[media] Exported window id=%s\n", window_id_);
 
-    // Get display resolution for fullscreen scaling
     SDL_DisplayMode mode;
     if (SDL_GetCurrentDisplayMode(0, &mode) == 0) {
         display_w_ = mode.w;
@@ -56,9 +56,13 @@ bool Media::open(const char *app_id, int width, int height, bool audio, int rate
 
     SDL_Rect src = {0, 0, width, height};
     SDL_Rect dst = {0, 0, display_w_, display_h_};
-    SDL_webOSSetExportedWindow(window_id_, &src, &dst);
+    if (!SDL_webOSSetExportedWindow(window_id_, &src, &dst)) {
+        fprintf(stderr, "[media] SDL_webOSSetExportedWindow failed\n");
+    }
+    fprintf(stderr, "[media] Window geometry set src=%dx%d dst=%dx%d\n", width, height, display_w_, display_h_);
 
     api_ = new StarfishMediaAPIs(nullptr);
+    fprintf(stderr, "[media] StarfishMediaAPIs created\n");
     std::ostringstream p;
     p << "{\"args\":[{\"mediaTransportType\":\"BUFFERSTREAM\",\"option\":{\"appId\":\"" << app_id
       << "\",\"windowId\":\"" << window_id_
@@ -69,7 +73,7 @@ bool Media::open(const char *app_id, int width, int height, bool audio, int rate
                  << ",\"bitsPerSample\":16,\"layout\":\"interleaved\"}";
     p << "},\"restartStreaming\":false,\"streamQualityInfo\":true,\"streamQualityInfoNonFlushable\":true,\"totalStreamSize\":256,"
          "\"bufferingCtrInfo\":{\"preBufferByte\":0,\"bufferMinLevel\":0,\"bufferMaxLevel\":0,\"qBufferLevelAudio\":0,\"qBufferLevelVideo\":0,"
-         "\"srcBufferLevelAudio\":{\"minimum\":1024,\"maximum\":131072},\"srcBufferLevelVideo\":{\"minimum\":1024,\"maximum\":1048576}}},"
+         "\"srcBufferLevelAudio\":{\"minimum\":1024,\"maximum\":131072},\"srcBufferLevelVideo\":{\"minimum\":4096,\"maximum\":4194304}}},"
          "\"adaptiveStreaming\":{\"audioOnly\":false,\"maxWidth\":" << width << ",\"maxHeight\":" << height << ",\"maxFrameRate\":30}}}]}";
     fprintf(stderr, "[media] Load %s\n", p.str().c_str());
     loaded_ = api_->Load(p.str().c_str(), event, this);

@@ -1,10 +1,11 @@
 {
   "id": "com.github.danlflh.uxplaywebos",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "vendor": "UxPlay webOS",
   "type": "native",
   "main": "uxplay-webos",
   "title": "UxPlay webOS",
   "icon": "icon.png",
-  "requiredMemory": 96
+  "requiredMemory": 96,
+  "nativeLifeCycleInterfaceVersion": 2
 }
