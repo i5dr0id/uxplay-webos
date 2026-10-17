@@ -91,7 +91,7 @@ bool Receiver::start(const std::string& dir) {
         fprintf(stderr,"[client] model=%.80s admitted=%d\n",model?model:"unknown",int(*admit));
         if(*admit) {r.client=id;r.message=std::string("Connecting: ")+(name?std::string(name).substr(0,80):"device");r.activity=now_ns();}
     };
-    cb.display_pin=[](void *p,char *pin){Receiver& r=self(p);std::lock_guard<std::mutex> l(r.mutex);r.pin_text=pin?std::string(pin).substr(0,8):"";r.message="Enter this code on your device";};
+    cb.display_pin=[](void *p,char *pin){Receiver& r=self(p);std::lock_guard<std::mutex> l(r.mutex);r.pin_text=pin?std::string(pin).substr(0,8):"";r.message="Enter this code on your device";r.pin_active=true;};
     cb.passwd=[](void *,int *n)->const char *{*n=0;return nullptr;};
     cb.check_register=[](void *p,const char *key)->bool{Receiver& r=self(p);std::lock_guard<std::mutex> l(r.mutex);return valid_key(key)&&r.keys.count(key);};
     cb.register_client=[](void *p,const char *,const char *key,const char *){
@@ -134,7 +134,7 @@ void Receiver::adjust_audio_delay(int delta) {
 }
 void Receiver::disconnect() {
     if(raop) raop_remove_known_connections(raop);
-    clear(); has_audio=false;mirror=false;paused=false;reset=false;audio_flush=false;last_audio_arrival=0;
+    clear(); has_audio=false;mirror=false;paused=false;reset=false;audio_flush=false;pin_active=false;last_audio_arrival=0;
     show("Waiting for a connection");
 }
 void Receiver::stop() {

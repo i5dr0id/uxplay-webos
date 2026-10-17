@@ -5,7 +5,7 @@
 
 #define BRIDGE_SOCK "/tmp/uxplay-av.sock"
 
-enum : uint8_t { MSG_PACKET=1, MSG_STATE=2, MSG_START=3, MSG_END=4 };
+enum : uint8_t { MSG_PACKET=1, MSG_STATE=2, MSG_START=3, MSG_END=4, MSG_PIN=5 };
 
 struct BridgeHeader {
     uint8_t  type;

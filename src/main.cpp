@@ -50,7 +50,7 @@ static int run_bridge(Shell &shell) {
     };
 
     fcntl(sock, F_SETFL, fcntl(sock, F_GETFL) | O_NONBLOCK);
-    shell.transparent();
+    bool mirroring = false;
 
     while (true) {
         int64_t now = now_ns();
@@ -66,10 +66,20 @@ static int run_bridge(Shell &shell) {
 
             if (h.type == MSG_END) { fprintf(stderr, "[bridge] session ended\n"); finish(); break; }
 
-            if (h.type == MSG_START) {
+            if (h.type == MSG_PIN) {
+                std::vector<char> buf(h.size + 1, 0);
+                if (h.size > 0 && !bridge_read_all(sock, buf.data(), h.size)) break;
+                std::string status(buf.data());
+                std::string pin_text;
+                size_t sep = status.size() + 1;
+                if (sep < h.size) pin_text.assign(buf.data() + sep, buf.data() + h.size);
+                shell.screen(status, pin_text);
+            } else if (h.type == MSG_START) {
                 int32_t dims[2];
                 if (!bridge_read_all(sock, dims, 8)) break;
                 width = dims[0]; height = dims[1];
+                mirroring = true;
+                shell.transparent();
                 fprintf(stderr, "[bridge] start %dx%d\n", width, height);
             } else if (h.type == MSG_STATE) {
                 float vol;

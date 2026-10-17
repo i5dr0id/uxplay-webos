@@ -12,6 +12,16 @@
 static volatile sig_atomic_t quit = 0;
 static void on_signal(int) { quit = 1; }
 
+static bool send_pin(int fd, Receiver &receiver) {
+    std::string status = receiver.status();
+    std::string pin = receiver.pin();
+    std::string payload = status + '\0' + pin;
+    BridgeHeader h = {};
+    h.type = MSG_PIN;
+    h.size = payload.size();
+    return bridge_write_all(fd, &h, sizeof(h)) && bridge_write_all(fd, payload.data(), payload.size());
+}
+
 int main() {
     umask(0077);
     start_log("daemon.log");
@@ -27,13 +37,14 @@ int main() {
     fprintf(stderr, "[daemon] listening\n");
 
     while (!quit) {
-        while (!quit && !receiver.mirror) {
+        while (!quit && !receiver.mirror && !receiver.pin_active) {
             usleep(100000);
             if (receiver.reset.exchange(false)) receiver.disconnect();
         }
         if (quit) break;
 
-        fprintf(stderr, "[daemon] connection, launching app\n");
+        bool for_pin = receiver.pin_active && !receiver.mirror;
+        fprintf(stderr, "[daemon] %s, launching app\n", for_pin ? "PIN requested" : "mirroring started");
 
         unlink(BRIDGE_SOCK);
         int srv = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -61,14 +72,12 @@ int main() {
 
         fprintf(stderr, "[daemon] app connected, bridging\n");
 
-        BridgeHeader h = {};
-        h.type = MSG_START;
-        h.size = 8;
-        int32_t dims[2] = {receiver.width.load(), receiver.height.load()};
-        bridge_write_all(client, &h, sizeof(h));
-        bridge_write_all(client, dims, 8);
+        if (receiver.pin_active && !receiver.mirror) {
+            send_pin(client, receiver);
+        }
 
-        int64_t last_state = 0;
+        bool sent_start = false;
+        int64_t last_state = 0, last_pin = now_ns();
         Packet pkt;
         bool active = true;
 
@@ -76,14 +85,32 @@ int main() {
             int64_t now = now_ns();
 
             if (receiver.reset.exchange(false) ||
-                (receiver.activity && now - receiver.activity > 20000000000LL)) {
-                h = {}; h.type = MSG_END;
+                (receiver.activity && now - receiver.activity > 20000000000LL) ||
+                (!receiver.mirror && !receiver.pin_active)) {
+                BridgeHeader h = {}; h.type = MSG_END;
                 bridge_write_all(client, &h, sizeof(h));
                 active = false; break;
             }
 
-            if (now - last_state > 100000000) {
-                h = {};
+            if (receiver.pin_active && !receiver.mirror && now - last_pin > 500000000) {
+                if (!send_pin(client, receiver)) { active = false; break; }
+                last_pin = now;
+            }
+
+            if (receiver.mirror && !sent_start) {
+                BridgeHeader h = {};
+                h.type = MSG_START;
+                h.size = 8;
+                int32_t dims[2] = {receiver.width.load(), receiver.height.load()};
+                if (!bridge_write_all(client, &h, sizeof(h)) || !bridge_write_all(client, dims, 8)) {
+                    active = false; break;
+                }
+                sent_start = true;
+                fprintf(stderr, "[daemon] mirroring started\n");
+            }
+
+            if (sent_start && now - last_state > 100000000) {
+                BridgeHeader h = {};
                 h.type = MSG_STATE;
                 h.flags = (receiver.paused ? 1 : 0) |
                           (receiver.audio_flush.exchange(false) ? 2 : 0) |
@@ -97,8 +124,8 @@ int main() {
                 last_state = now;
             }
 
-            if (receiver.pop(pkt)) {
-                h = {};
+            if (sent_start && receiver.pop(pkt)) {
+                BridgeHeader h = {};
                 h.type = MSG_PACKET;
                 h.flags = pkt.video ? 1 : 0;
                 h.codec = pkt.codec;

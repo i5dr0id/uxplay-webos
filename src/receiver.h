@@ -25,7 +25,7 @@ struct Receiver {
     std::string pin();
     void adjust_audio_delay(int delta_ms);
     std::atomic<int> audio_delay_ms{100};
-    std::atomic<bool> reset{false}, audio_flush{false}, paused{false}, has_audio{false}, mirror{false};
+    std::atomic<bool> reset{false}, audio_flush{false}, paused{false}, has_audio{false}, mirror{false}, pin_active{false};
     std::atomic<int> width{1280},height{720};
     std::atomic<float> volume{1};
     std::atomic<int64_t> activity{0};
