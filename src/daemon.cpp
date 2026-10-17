@@ -72,6 +72,8 @@ int main() {
 
         fprintf(stderr, "[daemon] app connected, bridging\n");
 
+        receiver.reset.exchange(false);
+
         if (receiver.pin_active && !receiver.mirror) {
             send_pin(client, receiver);
         }
@@ -84,12 +86,22 @@ int main() {
         while (!quit && active) {
             int64_t now = now_ns();
 
-            if (receiver.reset.exchange(false) ||
-                (receiver.activity && now - receiver.activity > 20000000000LL) ||
-                (!receiver.mirror && !receiver.pin_active)) {
-                BridgeHeader h = {}; h.type = MSG_END;
-                bridge_write_all(client, &h, sizeof(h));
-                active = false; break;
+            if (sent_start) {
+                if (receiver.reset.exchange(false) ||
+                    (receiver.activity && now - receiver.activity > 20000000000LL)) {
+                    BridgeHeader h = {}; h.type = MSG_END;
+                    bridge_write_all(client, &h, sizeof(h));
+                    active = false; break;
+                }
+            } else {
+                // PIN phase: AirPlay opens/closes multiple TCP connections during
+                // pairing — ignore reset signals, only exit if PIN is cancelled.
+                receiver.reset.exchange(false);
+                if (!receiver.pin_active && !receiver.mirror) {
+                    BridgeHeader h = {}; h.type = MSG_END;
+                    bridge_write_all(client, &h, sizeof(h));
+                    active = false; break;
+                }
             }
 
             if (receiver.pin_active && !receiver.mirror && now - last_pin > 500000000) {
@@ -142,7 +154,9 @@ int main() {
 
         close(client);
         unlink(BRIDGE_SOCK);
-        receiver.disconnect();
+        if (!receiver.mirror && !receiver.pin_active) {
+            receiver.disconnect();
+        }
         fprintf(stderr, "[daemon] session ended\n");
     }
 
