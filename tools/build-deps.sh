@@ -8,7 +8,7 @@ export PATH="$sdk/bin:$PATH"
 export CC="$sdk/bin/arm-webos-linux-gnueabi-gcc" CXX="$sdk/bin/arm-webos-linux-gnueabi-g++"
 export AR="$sdk/bin/arm-webos-linux-gnueabi-ar" RANLIB="$sdk/bin/arm-webos-linux-gnueabi-ranlib"
 export CFLAGS="--sysroot=$sdk/arm-webos-linux-gnueabi/sysroot -O2 -fPIC"
-export CXXFLAGS="$CFLAGS -D_GLIBCXX_USE_CXX11_ABI=0"
+export CXXFLAGS="$CFLAGS"
 export LDFLAGS="--sysroot=$sdk/arm-webos-linux-gnueabi/sysroot"
 mkdir -p "$prefix" build/logs
 build_stamp="$(shasum -a 256 "$0" | cut -d ' ' -f 1)"
@@ -27,7 +27,7 @@ if [ "$build_stamp" != "$previous_stamp" ] || [ ! -f "$prefix/lib/libplist-2.0.a
 fi
 if [ "$build_stamp" != "$previous_stamp" ] || [ ! -f "$prefix/lib/libavcodec.a" ]; then
     (cd .cache/ffmpeg-8.1.2
-     ./configure --prefix="$prefix" --arch=arm --cpu=cortex-a9 --target-os=linux --enable-cross-compile \
+     ./configure --prefix="$prefix" --arch=arm --cpu=cortex-a53 --target-os=linux --enable-cross-compile \
        --sysroot="$sdk/arm-webos-linux-gnueabi/sysroot" \
        --extra-cflags=-Dstatic_assert=_Static_assert \
        --cross-prefix="$sdk/bin/arm-webos-linux-gnueabi-" --disable-everything --disable-programs --disable-doc \

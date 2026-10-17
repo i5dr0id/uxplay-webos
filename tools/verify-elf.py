@@ -28,8 +28,8 @@ def main():
             sys.exit(f'Wrong target ABI: {file}')
         versions = output('-V',file).split('Version needs section')[-1]
         for v in re.findall(r'Name: GLIBC_(\d+(?:\.\d+)+)', versions):
-            if version(v)>version('2.19'):
-                sys.exit(f'{file}: requires GLIBC_{v}, newer than TV 2.19')
+            if version(v)>version('2.28'):
+                sys.exit(f'{file}: requires GLIBC_{v}, newer than TV 2.28')
         for name in re.findall(r'Name: ((?:GLIBCXX|CXXABI)[_A-Z.0-9]+)',versions):
             if name not in exported:
                 sys.exit(f'{file}: bundled C++ runtime lacks {name}')

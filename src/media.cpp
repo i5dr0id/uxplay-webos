@@ -1,18 +1,15 @@
 #include "media.h"
 #include <StarfishMediaAPIs.h>
-#include <AcbAPI.h>
+#include <SDL_webOS.h>
+#include <SDL.h>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <sstream>
 
-// This firmware exports a three-argument wrapper; the NDK declaration omits taskId.
-extern "C" int acb_video_info(long, const char *, long *) __asm__("AcbAPI_setMediaVideoData");
 struct Media::Impl { std::mutex mutex; std::string video_info; };
 Media::Media() : impl_(new Impl) {}
 Media::~Media() { close(); delete impl_; }
-static void acb_event(long, long, long event, long app, long play, const char *reply) {
-    fprintf(stderr, "[acb] event=%ld app=%ld play=%ld %s\n", event, app, play, reply ? reply : "");
-}
 void Media::event(int type, int64_t value, const char *message, void *user) {
     Media *m = static_cast<Media *>(user);
     if (type == PF_EVENT_TYPE_FRAMEREADY) { ++m->frames; return; }
@@ -38,16 +35,33 @@ bool Media::open(const char *app_id, int width, int height, bool audio, int rate
     close();
     ready = playing = ended = failed = false;
     frames = 0;
-    acb_ = AcbAPI_create();
-    if (!acb_ || !AcbAPI_initialize(acb_, PLAYER_TYPE_MSE, app_id, acb_event)) {
-        fprintf(stderr, "[media] ACB initialization failed\n"); close(); return false;
+
+    // Create exported video window (replaces AcbAPI on webOS 5+)
+    const char *id = SDL_webOSCreateExportedWindow(0);
+    if (!id) {
+        fprintf(stderr, "[media] SDL_webOSCreateExportedWindow failed\n");
+        return false;
     }
+    snprintf(window_id_, sizeof(window_id_), "%s", id);
+
+    // Get display resolution for fullscreen scaling
+    SDL_DisplayMode mode;
+    if (SDL_GetCurrentDisplayMode(0, &mode) == 0) {
+        display_w_ = mode.w;
+        display_h_ = mode.h;
+    } else {
+        display_w_ = width;
+        display_h_ = height;
+    }
+
+    SDL_Rect src = {0, 0, width, height};
+    SDL_Rect dst = {0, 0, display_w_, display_h_};
+    SDL_webOSSetExportedWindow(window_id_, &src, &dst);
+
     api_ = new StarfishMediaAPIs(nullptr);
-    if (!AcbAPI_setMediaId(acb_, api_->getMediaID())) {
-        fprintf(stderr, "[media] ACB media registration failed\n"); close(); return false;
-    }
     std::ostringstream p;
     p << "{\"args\":[{\"mediaTransportType\":\"BUFFERSTREAM\",\"option\":{\"appId\":\"" << app_id
+      << "\",\"windowId\":\"" << window_id_
       << "\",\"queryPosition\":false,\"externalStreamingInfo\":{\"contents\":{\"codec\":{\"video\":\"H264\"";
     if (audio) p << ",\"audio\":\"PCM\"";
     p << "},\"esInfo\":{\"pauseAtDecodeTime\":true,\"ptsToDecode\":0,\"seperatedPTS\":true,\"videoFpsValue\":30,\"videoFpsScale\":1},\"format\":\"RAW\",\"provider\":\"Chrome\"";
@@ -60,26 +74,18 @@ bool Media::open(const char *app_id, int width, int height, bool audio, int rate
     fprintf(stderr, "[media] Load %s\n", p.str().c_str());
     loaded_ = api_->Load(p.str().c_str(), event, this);
     if (!loaded_) { close(); return false; }
-    AcbAPI_setDisplayWindow(acb_, 0, 0, width, height, true, &task_);
     return true;
 }
 void Media::tick() {
     if (!api_ || !loaded_ || failed) return;
-    if (ready && !sink_attached_) {
-        AcbAPI_setSinkType(acb_, SINK_TYPE_MAIN);
-        AcbAPI_setState(acb_, APPSTATE_FOREGROUND, PLAYSTATE_LOADED, &task_);
-        sink_attached_ = true;
-    }
     if (video_info_pending_.exchange(false)) {
         std::lock_guard<std::mutex> lock(impl_->mutex);
-        acb_video_info(acb_, impl_->video_info.c_str(), &task_);
+        // On webOS 5 the exported window handles geometry updates
+        SDL_Rect src = {0, 0, display_w_, display_h_};
+        SDL_Rect dst = {0, 0, display_w_, display_h_};
+        SDL_webOSSetExportedWindow(window_id_, &src, &dst);
     }
     if (ready && !play_requested_) play_requested_ = api_->Play();
-    if (playing && sink_attached_ && !acb_playing_) {
-        AcbAPI_setState(acb_, APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &task_);
-        // ACB only needs the transition once; playing remains observable by the caller.
-        acb_playing_=true;
-    }
 }
 FeedResult Media::feed(const void *data, size_t size, int64_t pts_ns, bool video) {
     if (!api_ || !loaded_ || failed || !data || !size) return FeedResult::Error;
@@ -95,15 +101,15 @@ FeedResult Media::feed(const void *data, size_t size, int64_t pts_ns, bool video
 void Media::eos() { if (api_ && loaded_) api_->pushEOS(); }
 void Media::pause(bool paused) {if(api_&&loaded_) {if(paused)api_->Pause();else api_->Play();}}
 void Media::close() {
-    if(acb_ && loaded_) AcbAPI_setState(acb_,APPSTATE_FOREGROUND,PLAYSTATE_UNLOADED,&task_);
     if (api_) {
         if (loaded_) { api_->Unload(); fprintf(stderr, "[media] unloaded\n"); }
         delete api_; api_ = nullptr;
     }
-    if (acb_) {
-        AcbAPI_finalize(acb_); AcbAPI_destroy(acb_); acb_ = 0;
-        fprintf(stderr, "[media] ACB released\n");
+    if (window_id_[0]) {
+        SDL_webOSDestroyExportedWindow(window_id_);
+        window_id_[0] = '\0';
+        fprintf(stderr, "[media] exported window released\n");
     }
-    loaded_ = sink_attached_ = play_requested_ = acb_playing_ = false;
+    loaded_ = play_requested_ = false;
     video_info_pending_ = false;
 }

@@ -20,10 +20,10 @@ public:
 private:
     static void event(int type, int64_t value, const char *message, void *user);
     StarfishMediaAPIs *api_ = nullptr;
-    long acb_ = 0, task_ = 0;
-    bool loaded_ = false, sink_attached_ = false, play_requested_ = false, acb_playing_ = false;
+    char window_id_[64] = {};
+    int display_w_ = 0, display_h_ = 0;
+    bool loaded_ = false, play_requested_ = false;
     std::atomic<bool> video_info_pending_{false};
-    // Firmware callbacks and Feed run on separate threads.
     struct Impl;
     Impl *impl_;
 };
