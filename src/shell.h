@@ -1,4 +1,5 @@
 #pragma once
+#include "utils.h"
 #include <SDL.h>
 #include <cstdint>
 #include <string>
@@ -18,7 +19,3 @@ private:
     _TTF_Font *font_=nullptr, *large_=nullptr;
     void text(const std::string&,int y,_TTF_Font*,SDL_Color);
 };
-int64_t now_ns();
-std::string app_directory();
-void start_log(const char *name);
-void rotate_log();

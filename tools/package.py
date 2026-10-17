@@ -20,6 +20,9 @@ def main():
     for name in ['appinfo.json', 'icon.png']:
         shutil.copy2(ROOT / 'packaging' / name, stage / name)
     shutil.copy2(ROOT / 'build/uxplay-webos', stage / 'uxplay-webos')
+    daemon = ROOT / 'build/uxplay-daemon'
+    if daemon.exists():
+        shutil.copy2(daemon, stage / 'uxplay-daemon')
     shutil.copy2(SDK / 'arm-webos-linux-gnueabi/sysroot/usr/lib/libstdc++.so.6', stage / 'lib/libstdc++.so.6')
     for source, dest in [
         ('LICENSE', 'GPL-3.0.txt'),
@@ -36,6 +39,8 @@ def main():
     shutil.copy2(ROOT / 'dependencies.lock.json', stage / 'dependencies.lock.json')
     strip = SDK / 'bin/arm-webos-linux-gnueabi-strip'
     subprocess.run([str(strip), str(stage / 'uxplay-webos')], check=True)
+    if (stage / 'uxplay-daemon').exists():
+        subprocess.run([str(strip), str(stage / 'uxplay-daemon')], check=True)
     subprocess.run(['python3', str(ROOT / 'tools/verify-elf.py'), str(stage)], check=True)
 
     appinfo = json.loads((stage / 'appinfo.json').read_text())
